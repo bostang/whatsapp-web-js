@@ -1,60 +1,153 @@
-# **WhatsApp Web JS: Pengirim Pesan Otomatis**
+# Backend - Server WhatsApp
 
-Proyek ini adalah skrip Node.js sederhana untuk mengirim pesan WhatsApp secara otomatis ke daftar kontak yang ditentukan dalam format JSON. Skrip ini memanfaatkan library `whatsapp-web.js` untuk berinteraksi dengan WhatsApp Web secara tersembunyi (*headless*).
+Server backend ini dibangun dengan **Node.js** dan framework **Express.js**. Ia bertanggung jawab untuk mengelola koneksi WhatsApp, membaca data kontak, dan mengirim pesan melalui API.
 
-![bukti-berhasil](./img/bukti-berhasil.png)
-![tampilan-log](./img/tampilan-log-behasil.png)
+## Dependensi
 
-**Fitur Utama:**
+- `express`: Framework web untuk Node.js.
+- `cors`: Middleware untuk mengaktifkan Cross-Origin Resource Sharing.
+- `whatsapp-web.js`: Library untuk mengotomatisasi WhatsApp Web.
+- `qrcode-terminal`: Untuk menampilkan QR code di terminal.
 
-* **Pengiriman Otomatis:** Mengirim pesan ke banyak kontak secara efisien.
-* **Personalisasi Pesan:** Menyesuaikan sapaan pesan (`mas`/`mbak`) berdasarkan gender yang terdaftar di data kontak.
-* **Penanganan Sesi Otomatis:** Tidak perlu memindai QR *code* setiap kali skrip dijalankan setelah otentikasi pertama.
-* **Pencegahan Spam:** Terdapat jeda waktu antara setiap pengiriman pesan untuk mengurangi risiko akun terdeteksi sebagai spam.
+---
 
------
+## API Documentation
 
-## **Cara Menjalankan**
+Server ini mengekspos beberapa endpoint REST API untuk berinteraksi dengan fungsionalitas pengiriman pesan WhatsApp.
 
-### **Persiapan Awal**
+### 1. GET /api/contacts
 
-1. Pastikan Anda telah menginstal **Node.js** dan **npm** di sistem Anda.
-2. Instal dependensi proyek dengan menjalankan perintah berikut di terminal:
+Mengambil daftar kontak dari file `data/contact.json`.
 
-    ```bash
-    npm install whatsapp-web.js qrcode-terminal
-    ```
+- **URL**: `/api/contacts`
+- **Method**: `GET`
+- **URL Params**: Tidak ada.
+- **Success Response**:
+  - **Code**: `200 OK`
+  - **Content**: `application/json`
+  - **Contoh Body**:
 
-### **Konfigurasi Kontak**
+        ```json
+        [
+          {
+            "nama": "John Doe",
+            "nomor": "6281234567890",
+            "gender": "laki"
+          },
+          {
+            "nama": "Jane Doe",
+            "nomor": "6281298765432",
+            "gender": "perempuan"
+          }
+        ]
+        ```
 
-1. Buat folder bernama `data` di direktori proyek.
-2. Di dalam folder `data`, buat file `contact.json` dengan format berikut. Pastikan nomor telepon ditulis tanpa awalan `+` atau spasi.
+- **Error Response**:
+  - **Code**: `500 Internal Server Error`
+  - **Content**: `application/json`
+  - **Contoh Body**:
+
+        ```json
+        {
+          "error": "Gagal membaca file kontak."
+        }
+        ```
+
+### 2. POST /api/send-message
+
+Mengirim pesan ke satu nomor. Endpoint ini mendukung pengiriman ke kontak dari daftar atau nomor kustom.
+
+- **URL**: `/api/send-message`
+- **Method**: `POST`
+- **Headers**:
+  - `Content-Type: application/json`
+- **Body Request**:
+  - **Untuk Kontak dari Daftar:**
+
+        ```json
+        {
+          "nomor": "6281234567890",
+          "nama": "John Doe",
+          "gender": "laki",
+          "message": "Halo {sapaan} {nama}! Ini adalah pesan kustom."
+        }
+        ```
+
+  - **Untuk Nomor Kustom:**
+
+        ```json
+        {
+          "customNomor": "6289876543210",
+          "customNama": "Penerima Kustom",
+          "customGender": "perempuan",
+          "message": "Hai {sapaan}, bagaimana kabarmu?"
+        }
+        ```
+
+- **Success Response**:
+  - **Code**: `200 OK`
+  - **Contoh Body**:
+
+        ```json
+        {
+          "success": true,
+          "message": "Pesan berhasil dikirim ke John Doe."
+        }
+        ```
+
+- **Error Responses**:
+  - **Code**: `400 Bad Request`
+    - **Message**: `Nomor tidak boleh kosong.`
+    - **Message**: `Nomor [nomor] tidak terdaftar di WhatsApp.`
+  - **Code**: `500 Internal Server Error`
+    - **Message**: `Gagal mengirim pesan.`
+
+### 3. POST /api/send-bulk
+
+Mengirim pesan ke beberapa kontak yang dipilih.
+
+- **URL**: `/api/send-bulk`
+- **Method**: `POST`
+- **Headers**:
+  - `Content-Type: application/json`
+- **Body Request**:
 
     ```json
-    [
-      {
-        "nomor": "6281234567890",
-        "gender": "laki",
-        "nama": "bostang"
-      },
-      ...
-    ]
+    {
+      "contacts": [
+        {
+          "nama": "John Doe",
+          "nomor": "6281234567890",
+          "gender": "laki"
+        },
+        {
+          "nama": "Jane Doe",
+          "nomor": "6281298765432",
+          "gender": "perempuan"
+        }
+      ],
+      "message": "Halo {sapaan} {nama}, ini adalah pesan massal."
+    }
     ```
 
-### **Pengiriman Pesan**
+- **Success Response**:
+  - **Code**: `200 OK`
+  - **Contoh Body**:
 
-Jalankan skrip dengan perintah berikut:
+        ```json
+        {
+          "success": true,
+          "berhasil": ["John Doe"],
+          "gagal": ["Jane Doe"],
+          "message": "Proses pengiriman pesan massal selesai."
+        }
+        ```
 
-```bash
-node send_to_all.js
-```
+- **Error Responses**:
+  - **Code**: `500 Internal Server Error`
+    - **Message**: `Terjadi kesalahan saat mengirim pesan massal.`
 
-Saat pertama kali dijalankan, sebuah QR *code* akan muncul di terminal. Pindai QR *code* tersebut menggunakan aplikasi WhatsApp di ponsel Anda (**Pengaturan \> Perangkat Tertaut \> Tautkan Perangkat**).
+## File Penting
 
-Setelah berhasil terhubung, skrip akan mulai mengirim pesan satu per satu ke setiap kontak.
-
------
-
-### **Peringatan**
-
-**Mohon diperhatikan:** Penggunaan *library* ini **tidak didukung secara resmi** oleh WhatsApp dan **melanggar Ketentuan Layanan** mereka. Penggunaan skrip ini untuk tujuan komersial atau pengiriman pesan massal berisiko tinggi menyebabkan akun WhatsApp Anda diblokir. Proyek ini direkomendasikan hanya untuk tujuan edukasi, eksperimen, atau penggunaan pribadi yang sangat terbatas.
+- `server.js`: Kode sumber utama server backend.
+- `./data/contact.json`: File yang berisi data kontak dalam format JSON.
