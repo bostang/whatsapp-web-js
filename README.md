@@ -1,61 +1,82 @@
-# Proyek WhatsApp Web via JavaScript
+# 🚀 WhatsApp Web Sender v2.2
 
-Aplikasi web sederhana untuk mengirim pesan WhatsApp secara otomatis dan personal menggunakan JavaScript. Proyek ini terdiri dari dua bagian utama: **frontend** yang dibangun dengan React.js dan **backend** yang menggunakan Node.js dengan library `whatsapp-web.js`.
+Aplikasi web otomatisasi WhatsApp yang cepat, ringan, dan teroptimasi. Dibangun menggunakan arsitektur modern untuk memastikan pengalaman pengguna yang mulus tanpa *lagging* saat pengiriman pesan massal maupun manajemen kontak.
 
 **Tampilan Frontend**:
-
 ![frontend](./img/frontend-showcase.png)
 
 **Tampilan Backend**:
-
 ![backend](./img/backend-log.png)
 
-## Fitur Utama
+## ✨ Fitur Unggulan (v2.2)
 
-- **Pengiriman Pesan Personal**: Kirim pesan ke satu kontak dari daftar yang telah disediakan.
-- **Pengiriman Pesan Massal (Bulk Send)**: Pilih dan kirim pesan ke beberapa kontak sekaligus.
-- **Pengiriman Pesan Kustom**: Kirim pesan ke nomor telepon yang diinput secara manual, lengkap dengan kustomisasi nama, gender, dan isi pesan.
-- **Template Pesan Dinamis**: Pesan dapat dipersonalisasi menggunakan *placeholder* seperti `{nama}` dan `{sapaan}`.
-- **Otentikasi WhatsApp Web**: Menggunakan pemindaian QR code untuk menghubungkan aplikasi dengan akun WhatsApp Anda.
+- **High-Performance UI**: Dioptimasi dengan `React.memo`, `useCallback`, dan `useRef` untuk memastikan pengetikan pesan tetap responsif (Zero-Lag) meskipun mengelola ratusan kontak.
+- **Advanced Filtering**: Fitur pencarian *real-time* untuk Kontak dan Grup WhatsApp secara terpisah.
+- **Smart Messaging**:
+  - **Bulk Send**: Kirim pesan massal ke kontak terpilih dengan satu klik.
+  - **Group Sender**: Kirim pesan pengumuman ke grup WhatsApp langsung dari dashboard.
+  - **Personal Custom Sender**: Kirim ke nomor manual tanpa simpan kontak.
+- **Dynamic Personalization**: Dukungan variabel `{nama}` dan `{sapaan}` (Mas/Mbak) berdasarkan gender untuk pesan yang lebih manusiawi.
+- **Reliable Backend**: Menggunakan `whatsapp-web.js` yang stabil dengan sistem log otentikasi di terminal.
 
-## Prasyarat
+## 🛠️ Prasyarat
 
-Sebelum menjalankan proyek, pastikan Anda telah menginstal:
+- **Node.js**: v16.x atau lebih tinggi
+- **WhatsApp**: Akun aktif untuk proses *pairing* via QR Code
 
-- Node.js (versi 14 atau lebih tinggi)
-- npm (biasanya sudah termasuk dalam instalasi Node.js)
+## 🚀 Cara Menjalankan
 
-## Cara Menjalankan Proyek
+1. **Clone Repositori**
 
-1. **Clone repositori:**
+   ```bash
+   git clone [https://github.com/bostang/whatsapp-web-js](https://github.com/bostang/whatsapp-web-js)
+   cd whatsapp-web-js
 
-    ```bash
-    git clone https://github.com/bostang/whatsapp-web-js
-    ```
+```
 
-2. **Masuk ke direktori backend, instal dependensi, dan jalankan server:**
+2. **Setup Backend**
+```bash
+cd backend
+npm install
+node server.js
 
-    ```bash
-    cd whatsapp-web-js/backend
-    npm install
-    node server.js
-    ```
+```
 
-    - Pindai QR code yang muncul di terminal menggunakan aplikasi WhatsApp di HP Anda.
-    - Tunggu hingga muncul pesan `✅ Klien WhatsApp siap!`.
+*Scan QR Code di terminal dan tunggu hingga muncul status `Berhasil terautentikasi!`.*
+3. **Setup Frontend**
 
-3. **Buka terminal baru, masuk ke direktori frontend, instal dependensi, dan jalankan aplikasi:**
+```bash
+# Buka terminal baru
+cd frontend
+npm install
+npm start
 
-    ```bash
-    cd ../frontend
-    npm install
-    npm start
-    ```
+```
 
-    - Aplikasi akan terbuka di browser Anda, biasanya di `http://localhost:3000`.
+*Aplikasi akan berjalan otomatis di `http://localhost:3000`.*
 
-## Struktur Proyek
+## 📂 Struktur Proyek
 
-- `/backend`: Berisi kode sumber untuk server Node.js.
-- `/frontend`: Berisi kode sumber untuk aplikasi web React.js.
-- `/data`: Berisi file JSON untuk data kontak.
+```text
+├── backend/
+│   ├── server.js       # Express server & Logic WhatsApp
+│   ├── groups.json     # Database daftar grup
+│   └── contacts.json   # Database daftar kontak
+├── frontend/
+│   ├── src/
+│   │   ├── components/ # Komponen teroptimasi (Table, Sender, Input)
+│   │   ├── api.js      # Konfigurasi Axios & Endpoint
+│   │   └── App.js      # Orchestrator utama (State management)
+│   └── public/
+└── README.md
+
+```
+
+## 📝 Catatan Penggunaan
+
+- Gunakan format nomor internasional (contoh: `62812...`) tanpa spasi atau tanda plus.
+- Pastikan koneksi internet di HP stabil saat proses pengiriman massal berlangsung untuk menghindari *delay*.
+
+---
+
+Dibuat dengan ❤️ untuk efisiensi komunikasi.

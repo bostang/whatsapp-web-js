@@ -1,0 +1,287 @@
+// frontend/src/App.js
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Container, Table, Button, Alert, Spinner, Form, Card, Col } from 'react-bootstrap';
+
+function App() {
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState({});
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState([]);
+  
+  const [customNomor, setCustomNomor] = useState('');
+  const [customNama, setCustomNama] = useState('');
+  const [customGender, setCustomGender] = useState('laki');
+  const [customNomorSending, setCustomNomorSending] = useState(false);
+  
+  // State baru untuk Grup
+  const [groups, setGroups] = useState([]); // Daftar grup dari JSON
+  const [groupId, setGroupId] = useState('');
+  const [groupSending, setGroupSending] = useState(false);
+  
+  const [customMessage, setCustomMessage] = useState('');
+
+  const backend_port = 3003;
+
+  useEffect(() => {
+    fetchContacts();
+    fetchGroups();
+  }, []);
+
+  const fetchContacts = async () => {
+    try {
+      const response = await axios.get(`http://localhost:${backend_port}/api/contacts`);
+      setContacts(response.data);
+    } catch (error) {
+      console.error('Gagal mengambil data kontak:', error);
+      setMessage('Gagal mengambil data kontak.');
+      setMessageType('danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchGroups = async () => {
+    try {
+        const response = await axios.get(`http://localhost:${backend_port}/api/groups`);
+        setGroups(response.data);
+    } catch (error) {
+        console.error('Gagal mengambil data grup:', error);
+    }
+};
+  // Fungsi baru untuk mengirim ke Grup
+  const sendGroupMessage = async () => {
+    if (!groupId) {
+      setMessage('ID Grup tidak boleh kosong.');
+      setMessageType('warning');
+      return;
+    }
+
+    setGroupSending(true);
+    setMessage('');
+    
+    try {
+      await axios.post(`http://localhost:${backend_port}/api/send-group`, {
+          groupId: groupId,
+          message: customMessage
+      });
+      setMessage(`Pesan berhasil dikirim ke grup!`);
+      setMessageType('success');
+    } catch (error) {
+      console.error('Gagal mengirim pesan ke grup:', error);
+      const errorMessage = error.response?.data?.message || 'Gagal mengirim ke grup. Pastikan ID benar dan Anda terdaftar di grup.';
+      setMessage(errorMessage);
+      setMessageType('danger');
+    } finally {
+      setGroupSending(false);
+    }
+  };
+
+  // ... (handleSelectContact, isContactSelected, handleSelectAll tetap sama)
+  const handleSelectContact = (contact) => {
+    setSelectedContacts(prevSelected => {
+      if (prevSelected.some(c => c.nomor === contact.nomor)) {
+        return prevSelected.filter(c => c.nomor !== contact.nomor);
+      } else {
+        return [...prevSelected, contact];
+      }
+    });
+  };
+
+  const isContactSelected = (contact) => {
+    return selectedContacts.some(c => c.nomor === contact.nomor);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedContacts.length === contacts.length) {
+      setSelectedContacts([]);
+    } else {
+      setSelectedContacts([...contacts]);
+    }
+  };
+
+  const sendMessage = async (contact) => {
+    setSending(prev => ({ ...prev, [contact.nomor]: true }));
+    setMessage('');
+    try {
+      await axios.post(`http://localhost:${backend_port}/api/send-message`, {
+          nomor: contact.nomor,
+          nama: contact.nama,
+          gender: contact.gender,
+          message: customMessage
+      });
+      setMessage(`Pesan berhasil dikirim ke ${contact.nama}.`);
+      setMessageType('success');
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Terjadi kesalahan.';
+      setMessage(errorMessage);
+      setMessageType('danger');
+    } finally {
+      setSending(prev => ({ ...prev, [contact.nomor]: false }));
+    }
+  };
+
+  const sendCustomMessage = async () => {
+    setCustomNomorSending(true);
+    setMessage('');
+    const cleanNomor = customNomor.replace(/[^0-9]/g, '');
+    try {
+      await axios.post(`http://localhost:${backend_port}/api/send-message`, {
+          customNomor: cleanNomor,
+          customNama: customNama,
+          customGender: customGender,
+          message: customMessage
+      });
+      setMessage(`Pesan berhasil dikirim ke ${customNama || cleanNomor}.`);
+      setMessageType('success');
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Gagal mengirim.';
+      setMessage(errorMessage);
+      setMessageType('danger');
+    } finally {
+      setCustomNomorSending(false);
+    }
+  };
+
+  const sendBulkMessages = async () => {
+    if (selectedContacts.length === 0) return;
+    setSending(selectedContacts.reduce((acc, contact) => ({ ...acc, [contact.nomor]: true }), {}));
+    try {
+      const response = await axios.post(`http://localhost:${backend_port}/api/send-bulk`, { 
+        contacts: selectedContacts,
+        message: customMessage
+      });
+      setMessage(`Bulk selesai: ${response.data.berhasil.length} sukses.`);
+      setMessageType('info');
+    } catch (error) {
+      setMessage('Gagal bulk send.');
+      setMessageType('danger');
+    } finally {
+      setSending({});
+      setSelectedContacts([]);
+    }
+  };
+
+  if (loading) return <Container className="text-center mt-5"><Spinner animation="border" /></Container>;
+
+  return (
+    <Container className="mt-5">
+      <h1 className="mb-4">WA Sender Dashboard</h1>
+      {message && <Alert variant={messageType}>{message}</Alert>}
+      
+      {/* SECTION: PESAN UTAMA */}
+      <Card className="mb-4 border-primary">
+        <Card.Body>
+          <Form.Group>
+            <Form.Label><strong>Isi Pesan (Gunakan untuk semua menu)</strong></Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={3}
+              placeholder="Tulis pesan Anda di sini..."
+              value={customMessage}
+              onChange={(e) => setCustomMessage(e.target.value)}
+            />
+            <Form.Text className="text-muted">
+              Gunakan {'{nama}'} dan {'{sapaan}'} untuk personalisasi (hanya untuk kontak).
+            </Form.Text>
+          </Form.Group>
+        </Card.Body>
+      </Card>
+        {/* MENU: NOMOR KUSTOM */}
+        <Col md={6}>
+          <Card className="mb-4 shadow-sm">
+            <Card.Body>
+              <Card.Title>Kirim ke Nomor Personal</Card.Title>
+              <Form.Control className="mb-2" placeholder="Nama" value={customNama} onChange={(e) => setCustomNama(e.target.value)} />
+              <Form.Select className="mb-2" value={customGender} onChange={(e) => setCustomGender(e.target.value)}>
+                <option value="laki">Laki-laki</option>
+                <option value="perempuan">Perempuan</option>
+              </Form.Select>
+              <Form.Control className="mb-2" placeholder="628xxx" value={customNomor} onChange={(e) => setCustomNomor(e.target.value)} />
+              <Button variant="success" onClick={sendCustomMessage} disabled={customNomorSending} className="w-100">
+                {customNomorSending ? <Spinner size="sm" /> : 'Kirim Personal'}
+              </Button>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* MENU: KIRIM KE GRUP */}
+      <Col md={6}>
+        <Card className="mb-4 shadow-sm">
+          <Card.Body>
+            <Card.Title>Kirim ke Grup WhatsApp</Card.Title>
+            <Form.Group className="mb-2">
+              <Form.Label>Pilih Grup</Form.Label>
+              <Form.Select 
+                value={groupId} 
+                onChange={(e) => setGroupId(e.target.value)}
+              >
+                <option value="">-- Pilih Grup Tujuan --</option>
+                {groups.map((g, idx) => (
+                  <option key={idx} value={g.id}>{g.nama}</option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+            
+            {/* Tampilkan ID yang terpilih (optional untuk debug) */}
+            {groupId && <small className="text-muted d-block mb-2">ID: {groupId}</small>}
+
+            <div className="mt-3">
+              <Button 
+                variant="dark" 
+                onClick={sendGroupMessage} 
+                disabled={groupSending || !groupId} 
+                className="w-100"
+              >
+                {groupSending ? <Spinner size="sm" /> : 'Kirim ke Grup'}
+              </Button>
+            </div>
+          </Card.Body>
+        </Card>
+      </Col>
+            
+      {/* TABEL KONTAK */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h2>Daftar Kontak</h2>
+        <div>
+          <Button variant="warning" onClick={sendBulkMessages} className="me-2" disabled={selectedContacts.length === 0}>
+            Kirim ({selectedContacts.length}) Pesan Massal
+          </Button>
+          <Button variant="outline-secondary" onClick={handleSelectAll}>
+            {selectedContacts.length === contacts.length ? 'Batalkan' : 'Pilih Semua'}
+          </Button>
+        </div>
+      </div>
+      
+      <Table striped bordered hover responsive>
+        <thead>
+          <tr>
+            <th><Form.Check type="checkbox" onChange={handleSelectAll} checked={selectedContacts.length === contacts.length} /></th>
+            <th>Nama</th>
+            <th>Nomor</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map((contact, index) => (
+            <tr key={index}>
+              <td><Form.Check type="checkbox" onChange={() => handleSelectContact(contact)} checked={isContactSelected(contact)} /></td>
+              <td>{contact.nama}</td>
+              <td>{contact.nomor}</td>
+              <td>
+                <Button variant="primary" size="sm" onClick={() => sendMessage(contact)} disabled={sending[contact.nomor]}>
+                  {sending[contact.nomor] ? <Spinner size="sm" /> : 'Kirim'}
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Container>
+  );
+}
+
+export default App;

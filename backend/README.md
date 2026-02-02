@@ -1,153 +1,93 @@
-# Backend - Server WhatsApp
+# 🛠️ Backend - WhatsApp Automation Server
 
-Server backend ini dibangun dengan **Node.js** dan framework **Express.js**. Ia bertanggung jawab untuk mengelola koneksi WhatsApp, membaca data kontak, dan mengirim pesan melalui API.
+Server ini berfungsi sebagai jembatan (bridge) antara antarmuka web dan protokol WhatsApp menggunakan library `whatsapp-web.js`. Server mengelola sesi otentikasi, memproses antrean pesan, dan menyediakan API untuk dikonsumsi oleh frontend.
 
-## Dependensi
+## 📦 Dependensi Utama
 
-- `express`: Framework web untuk Node.js.
-- `cors`: Middleware untuk mengaktifkan Cross-Origin Resource Sharing.
-- `whatsapp-web.js`: Library untuk mengotomatisasi WhatsApp Web.
-- `qrcode-terminal`: Untuk menampilkan QR code di terminal.
+* **`express`**: Framework inti untuk REST API.
+* **`whatsapp-web.js`**: Library pembungkus (wrapper) WhatsApp Web melalui Puppeteer.
+* **`qrcode-terminal`**: Digunakan untuk me-render QR Code langsung di terminal.
+* **`cors`**: Mengizinkan permintaan lintas domain dari frontend React.
 
 ---
 
-## API Documentation
-
-Server ini mengekspos beberapa endpoint REST API untuk berinteraksi dengan fungsionalitas pengiriman pesan WhatsApp.
+## 🚀 API Documentation
 
 ### 1. GET /api/contacts
 
-Mengambil daftar kontak dari file `data/contact.json`.
+Mengambil daftar kontak dari penyimpanan lokal.
 
-- **URL**: `/api/contacts`
-- **Method**: `GET`
-- **URL Params**: Tidak ada.
-- **Success Response**:
-  - **Code**: `200 OK`
-  - **Content**: `application/json`
-  - **Contoh Body**:
+* **Method**: `GET`
+* **Endpoint**: `/api/contacts`
+* **Success Response**: `200 OK` (Array of contact objects).
 
-        ```json
-        [
-          {
-            "nama": "John Doe",
-            "nomor": "6281234567890",
-            "gender": "laki"
-          },
-          {
-            "nama": "Jane Doe",
-            "nomor": "6281298765432",
-            "gender": "perempuan"
-          }
-        ]
-        ```
+### 2. GET /api/groups
 
-- **Error Response**:
-  - **Code**: `500 Internal Server Error`
-  - **Content**: `application/json`
-  - **Contoh Body**:
+Mengambil daftar grup WhatsApp yang tersedia dari file `groups.json`.
 
-        ```json
-        {
-          "error": "Gagal membaca file kontak."
-        }
-        ```
+* **Method**: `GET`
+* **Endpoint**: `/api/groups`
+* **Success Response**: `200 OK`
+* **Body**:
 
-### 2. POST /api/send-message
+```json
+[
+  { "nama": "Chit-chat BR", "id": "120363408634458826@g.us" }
+]
 
-Mengirim pesan ke satu nomor. Endpoint ini mendukung pengiriman ke kontak dari daftar atau nomor kustom.
+```
 
-- **URL**: `/api/send-message`
-- **Method**: `POST`
-- **Headers**:
-  - `Content-Type: application/json`
-- **Body Request**:
-  - **Untuk Kontak dari Daftar:**
+### 3. POST /api/send-message
 
-        ```json
-        {
-          "nomor": "6281234567890",
-          "nama": "John Doe",
-          "gender": "laki",
-          "message": "Halo {sapaan} {nama}! Ini adalah pesan kustom."
-        }
-        ```
+Mengirim pesan tunggal ke nomor personal atau nomor kustom.
 
-  - **Untuk Nomor Kustom:**
+* **Method**: `POST`
+* **Body**: Mendukung objek kontak (nama, nomor, gender) dan string pesan.
+* **Kustomisasi**: Otomatis mengganti `{nama}` dan `{sapaan}` (Mas/Mbak).
 
-        ```json
-        {
-          "customNomor": "6289876543210",
-          "customNama": "Penerima Kustom",
-          "customGender": "perempuan",
-          "message": "Hai {sapaan}, bagaimana kabarmu?"
-        }
-        ```
+### 4. POST /api/send-bulk
 
-- **Success Response**:
-  - **Code**: `200 OK`
-  - **Contoh Body**:
+Mengirim pesan ke banyak kontak sekaligus secara berurutan.
 
-        ```json
-        {
-          "success": true,
-          "message": "Pesan berhasil dikirim ke John Doe."
-        }
-        ```
+* **Method**: `POST`
+* **Success Response**: Mengembalikan daftar nama yang `berhasil` dan `gagal`.
 
-- **Error Responses**:
-  - **Code**: `400 Bad Request`
-    - **Message**: `Nomor tidak boleh kosong.`
-    - **Message**: `Nomor [nomor] tidak terdaftar di WhatsApp.`
-  - **Code**: `500 Internal Server Error`
-    - **Message**: `Gagal mengirim pesan.`
+### 5. POST /api/send-group (NEW)
 
-### 3. POST /api/send-bulk
+Mengirim pesan pengumuman ke grup tertentu.
 
-Mengirim pesan ke beberapa kontak yang dipilih.
+* **Method**: `POST`
+* **Body Request**:
 
-- **URL**: `/api/send-bulk`
-- **Method**: `POST`
-- **Headers**:
-  - `Content-Type: application/json`
-- **Body Request**:
+```json
+{
+  "groupId": "120363408634458826@g.us",
+  "message": "Halo semuanya, ini pesan dari dashboard."
+}
 
-    ```json
-    {
-      "contacts": [
-        {
-          "nama": "John Doe",
-          "nomor": "6281234567890",
-          "gender": "laki"
-        },
-        {
-          "nama": "Jane Doe",
-          "nomor": "6281298765432",
-          "gender": "perempuan"
-        }
-      ],
-      "message": "Halo {sapaan} {nama}, ini adalah pesan massal."
-    }
-    ```
+```
 
-- **Success Response**:
-  - **Code**: `200 OK`
-  - **Contoh Body**:
+---
 
-        ```json
-        {
-          "success": true,
-          "berhasil": ["John Doe"],
-          "gagal": ["Jane Doe"],
-          "message": "Proses pengiriman pesan massal selesai."
-        }
-        ```
+## ⚙️ Logika Personalisasi Pesan
 
-- **Error Responses**:
-  - **Code**: `500 Internal Server Error`
-    - **Message**: `Terjadi kesalahan saat mengirim pesan massal.`
+Server secara otomatis memproses isi pesan sebelum dikirim dengan aturan:
 
-## File Penting
+1. **`{nama}`**: Diganti dengan nama kontak.
+2. **`{sapaan}`**:
 
-- `server.js`: Kode sumber utama server backend.
-- `./data/contact.json`: File yang berisi data kontak dalam format JSON.
+* Jika gender `laki` -> **Mas**.
+* Jika gender `perempuan` -> **Mbak**.
+
+---
+
+## 📂 Struktur Data
+
+* **`server.js`**: Logika utama server dan inisialisasi Client WhatsApp.
+* **`./data/contact.json`**: Database kontak personal.
+* **`./data/groups.json`**: Database ID grup WhatsApp (untuk mendapatkan ID grup, Anda bisa melihat log terminal saat server berjalan).
+
+## ⚠️ Catatan Penting
+
+* Saat pertama kali menjalankan `node server.js`, Anda wajib memindai QR Code yang muncul di terminal.
+* Status `Berhasil terautentikasi!` menandakan server siap menerima perintah dari frontend.
