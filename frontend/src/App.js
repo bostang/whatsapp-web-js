@@ -1,6 +1,5 @@
-// src/App.js
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Container, Alert, Spinner, Row, Col, Button, Form } from 'react-bootstrap';
+import { Container, Alert, Spinner, Row, Col, Button } from 'react-bootstrap'; // Form dihapus karena tidak dipakai langsung di sini
 import * as api from './api';
 import MessageInput from './components/MessageInput';
 import ContactTable from './components/ContactTable';
@@ -17,15 +16,13 @@ function App() {
     const [selectedContacts, setSelectedContacts] = useState([]);
     const [sending, setSending] = useState({});
 
-    // 1. Gunakan Ref untuk menyimpan pesan tanpa memicu re-render fungsi
     const messageRef = useRef('');
 
     const handleMessageChange = (val) => {
         setCustomMessage(val);
-        messageRef.current = val; // Update ref setiap kali state berubah
+        messageRef.current = val;
     };
 
-    // State untuk Search
     const [searchContact, setSearchContact] = useState('');
     const [searchGroup, setSearchGroup] = useState('');
 
@@ -41,7 +38,6 @@ function App() {
 
     const showMsg = (text, type) => setMessage({ text, type });
 
-    // FILTERING
     const filteredContacts = useMemo(() => {
         return contacts.filter(c => 
             c.nama.toLowerCase().includes(searchContact.toLowerCase()) || 
@@ -55,7 +51,6 @@ function App() {
         );
     }, [groups, searchGroup]);
 
-    // STABILKAN sendMessage: Gunakan fungsi murni yang tidak bergantung pada customMessage secara langsung di prop
     const handleSendToContact = useCallback(async (contact) => {
         setSending(prev => ({ ...prev, [contact.nomor]: true }));
         try {
@@ -63,7 +58,7 @@ function App() {
                 nomor: contact.nomor, 
                 nama: contact.nama, 
                 gender: contact.gender, 
-                message: messageRef.current // <--- Ambil dari Ref
+                message: messageRef.current 
             });
             showMsg(`Terkirim ke ${contact.nama}`, 'success');
         } catch (err) {
@@ -72,7 +67,6 @@ function App() {
             setSending(prev => ({ ...prev, [contact.nomor]: false }));
         }
     }, []); 
-    // AGAR TABEL TIDAK RENDER SAMA SEKALI, gunakan trik 'Ref' atau pisahkan pemanggilan pesan.
 
     const handleSelectContact = useCallback((contact) => {
         setSelectedContacts(prev => 
@@ -103,16 +97,21 @@ function App() {
 
     if (loading) return <Container className="text-center mt-5"><Spinner animation="border" /></Container>;
 
-return (
+    return (
         <Container className="mt-5 mb-5">
-            {/* ... */}
-            {/* 4. Gunakan handler baru di sini */}
+            <h1 className="mb-4">🚀 WA Sender v2.2</h1>
+            
+            {/* Menggunakan 'message' agar tidak error unused-vars */}
+            {message.text && (
+                <Alert variant={message.type} onClose={() => showMsg('', '')} dismissible>
+                    {message.text}
+                </Alert>
+            )}
+
             <MessageInput value={customMessage} onChange={handleMessageChange} />
 
-            <Row>
+            <Row className="mb-4">
                 <Col md={6}>
-                    {/* Gunakan Ref juga di CustomSender jika perlu, 
-                        atau biarkan jika CustomSender memang perlu render ulang */}
                     <CustomSender 
                         customMessage={customMessage} 
                         onSuccess={showMsg} 
@@ -131,16 +130,30 @@ return (
                 </Col>
             </Row>
 
-            {/* ... Bagian Search Kontak ... */}
+            <div className="d-flex justify-content-between align-items-center mb-3">
+                <h2>📋 Daftar Kontak</h2>
+                {/* Menggunakan 'sendBulkMessages' agar tidak error unused-vars */}
+                <Button 
+                    variant="warning" 
+                    onClick={sendBulkMessages} 
+                    disabled={selectedContacts.length === 0}
+                >
+                    Kirim Terpilih ({selectedContacts.length})
+                </Button>
+            </div>
+
             <ContactTable 
                 contacts={filteredContacts}
                 selectedContacts={selectedContacts}
                 handleSelectContact={handleSelectContact}
                 handleSelectAll={handleSelectAll}
-                sendMessage={handleSendToContact} // Sekarang referensi ini statis (tetap)
+                sendMessage={handleSendToContact}
                 sending={sending}
+                searchTerm={searchContact}        
+                onSearchChange={setSearchContact} 
             />
         </Container>
     );
 }
+
 export default App;
