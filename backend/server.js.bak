@@ -6,40 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const axios = require('axios');
 
 const app = express();
 const port = 3003;
 
 app.use(cors());
 app.use(express.json());
-
-// Daftar ID yang diizinkan memicu command (Whitelist)
-const authorizedUsers = [
-    '25688367223015@lid', // ID Anda
-    // 'nomorlain@c.us'   // Anda bisa menambah nomor lain di sini nanti
-];
-
-const authorizedGroups = [
-    '120363356357194833@g.us', // ID group
-    '120363408634458826@g.us'
-];
-
-const appAliases = {
-    'bifast': 'AMOCSR0021',
-    'wondr': 'AFONFO0265',
-    'bnidirect': 'AFONFO0032',
-    'tiplus': 'ABOAST0245',
-    'cms': 'AMOOES0260',
-    'esb' : 'AMOMWI0271'
-};
-
-// Fungsi Helper untuk Resolving Alias
-const resolveAppId = (input) => {
-    const lowerInput = input.toLowerCase().trim();
-    // Cek apakah ada di kamus, jika tidak ada gunakan input asli
-    return appAliases[lowerInput] || input.toUpperCase();
-};
 
 const client = new Client({
     authStrategy: new LocalAuth(),
@@ -56,154 +28,6 @@ const client = new Client({
         ],
         // Menghindari error navigasi pada versi chrome baru
         bypassCSP: true, 
-    }
-});
-
-// Menggunakan message_create menangkap pesan masuk DAN pesan yang Anda kirim sendiri
-client.on('message_create', async (msg) => {
-    try {
-        // BARIS PENTING YANG KURANG: Ambil objek chat dulu
-        const chat = await msg.getChat();
-        
-        const triggerKeyword = '!help';
-        const isGroupAutorized = authorizedGroups.includes(chat.id._serialized);
-        const isUserAuthorized = authorizedUsers.includes(msg.from);
-        const powerAutomateUrl = 'https://default56a5465fc59443efb2e12017477901.c7.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/02028c87cf7844898ab9ebb25b2c7c4e/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=Ur0J4BbDsfMy0ekdOPmbYJ6VH1tggBx_VeuYIOhtDBM';
-
-        // DEBUG LOG DETAIL
-        // console.log(`--- Detail Pesan Baru ---`);
-        // console.log(`Chat Name: ${chat.name}`);           // Akan muncul Nama Grup asli
-        // console.log(`Real Chat ID: ${chat.id._serialized}`); // Gunakan ID ini untuk targetGroupId
-        // console.log(`From (LID/JID): ${msg.from}`);
-        // console.log(`Is Group: ${chat.isGroup}`);
-        // console.log(`Content: ${msg.body}`);
-
-        // Gunakan chat.id._serialized untuk pengecekan yang lebih akurat daripada msg.from
-        if (isGroupAutorized && msg.body.toLowerCase().trim() === triggerKeyword) {
-            
-            // Jika bukan user yang sah, abaikan atau beri peringatan
-            if (!isUserAuthorized) {
-                console.log(`🚫 Akses ditolak untuk: ${msg.from}`);
-                return; // Berhenti di sini, tidak memicu Power Automate
-            }
-
-            console.log(`🚀 Keyword cocok di grup "${chat.name}"! Memicu Power Automate...`);
-
-            const response = await axios.post(powerAutomateUrl, {
-                sender: msg.author || msg.from,
-                groupName: chat.name,
-                groupId: chat.id._serialized,
-                message: msg.body,
-                timestamp: new Date().toISOString()
-            });
-
-            console.log('✅ Response Power Automate:', response.status);
-
-            if (response.status === 202 || response.status === 200) {
-                await msg.reply('✅ Permintaan bantuan telah diteruskan ke sistem Power Automate.');
-            }
-        }
-
-        // Memeriksa apakah pesan dimulai dengan !pic
-        if (isGroupAutorized && msg.body.toLowerCase().startsWith('!pic ')) {
-            if (!isUserAuthorized) {
-                console.log(`🚫 Akses ditolak untuk: ${msg.from}`);
-                return; // Berhenti di sini, tidak memicu Power Automate
-            }
-            // const appId = msg.body.split(' ')[1];
-            const rawInput = msg.body.split(' ')[1];
-            if (!rawInput) return msg.reply('❌ Masukkan kode atau alias aplikasi. Contoh: !pic bifast');
-            
-            const appId = resolveAppId(rawInput);
-
-            if (!appId) return msg.reply('❌ Masukkan kode aplikasi. Contoh: !pic APP01');
-
-            try {
-                // Melakukan hit ke dua endpoint sekaligus
-                const [appRes, picsRes] = await Promise.all([
-                    axios.get(`http://localhost:5000/api/apps/${appId}`),
-                    axios.get(`http://localhost:5000/api/apps/${appId}/people`)
-                ]);
-
-                const appData = appRes.data; // Mengambil detail aplikasi
-                const pics = picsRes.data;    // Mengambil daftar PIC
-
-                // Membuat header dengan Nama Aplikasi
-                let replyMessage = `📋 *Daftar PIC Aplikasi ${appId} - ${appData.nama_aplikasi}*\n`;
-                replyMessage += `_${appData.deskripsi_aplikasi || ''}_\n\n`;
-                
-                if (pics.length === 0) {
-                    replyMessage += `⚠️ Belum ada PIC yang terdaftar untuk aplikasi ini.`;
-                } else {
-                    pics.forEach((pic, index) => {
-                        replyMessage += `${index + 1}. *${pic.nama}*\n`;
-                        replyMessage += `   Divisi: ${pic.division}\n`;
-                        replyMessage += `   Posisi: ${pic.posisi}\n`;
-                        replyMessage += `   Phone: ${pic.phone || '-'}\n`;
-                        replyMessage += `   Email: ${pic.email || '-'}\n\n`;
-                    });
-                }
-
-                await msg.reply(replyMessage);
-
-            } catch (error) {
-                console.error('❌ Error hit backend:', error.message);
-                if (error.response && error.response.status === 404) {
-                    msg.reply(`❌ Aplikasi *${appId}* tidak ditemukan di database.`);
-                } else {
-                    msg.reply('⚠️ Terjadi kesalahan saat mengambil data.');
-                }
-            }
-        }
-
-        if (isGroupAutorized && msg.body.toLowerCase().startsWith('!link ')) {
-            if (!isUserAuthorized) {
-                console.log(`🚫 Akses !link ditolak untuk: ${msg.from}`);
-                return;
-            }
-
-            const rawInput = msg.body.split(' ')[1];
-            if (!rawInput) return msg.reply('❌ Masukkan kode atau alias aplikasi. Contoh: !link bifast');
-            
-            const appId = resolveAppId(rawInput);
-            // const appId = msg.body.split(' ')[1]?.toUpperCase();
-
-            if (!appId) return msg.reply('❌ Masukkan kode aplikasi. Contoh: !link AMOCSR0021');
-
-            try {
-                // Kita hit endpoint links
-                const response = await axios.get(`http://localhost:5000/api/links`);
-                const allLinks = response.data;
-
-                // Cari link yang sesuai dengan application_id (appId)
-                const appLink = allLinks.find(l => l.application_id.toUpperCase() === appId);
-
-                if (!appLink) {
-                    return msg.reply(`⚠️ Link untuk aplikasi *${appId}* tidak ditemukan.`);
-                }
-
-                // Susun pesan balasan
-                let linkMessage = `🔗 *Pranala Aplikasi: ${appId} - ${appLink.nama_aplikasi}*\n\n`;
-                
-                linkMessage += `📂 *Dokumentasi:* \n${appLink.docs_link || '-'}\n\n`;
-                linkMessage += `🛡️ *Warroom:* \n${appLink.warroom_link || '-'}\n\n`;
-                
-                if (appLink.notes) {
-                    linkMessage += `📝 *Catatan:* \n${appLink.notes}`;
-                }
-
-                await msg.reply(linkMessage);
-                console.log(`✅ Berhasil mengirim link untuk ${appId}`);
-
-            } catch (error) {
-                console.error('❌ Error hit backend links:', error.message);
-                msg.reply('⚠️ Terjadi kesalahan saat mengambil data link.');
-            }
-        }
-
-    } catch (err) {
-        // Tambahkan try-catch di dalam event agar server tidak crash jika ada pesan aneh
-        console.error('❌ Error processing message:', err.message);
     }
 });
 
