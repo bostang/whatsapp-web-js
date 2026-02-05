@@ -8,30 +8,27 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
-const app = express();
-const port = 3003;
+// --- LOAD KONFIGURASI DARI FILE ---
+const configPath = path.resolve(__dirname, 'data/config.json');
+const aliasPath = path.resolve(__dirname, 'data/aliases.json');
 
-app.use(cors());
-app.use(express.json());
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const appAliases = JSON.parse(fs.readFileSync(aliasPath, 'utf8'));
 
-// Daftar ID yang diizinkan memicu command (Whitelist)
-const authorizedUsers = [
-    '25688367223015@lid', // ID Anda
-    // 'nomorlain@c.us'   // Anda bisa menambah nomor lain di sini nanti
-];
+// Ekstrak nilai dari config agar bisa digunakan langsung
+const { 
+    authorizedGroups, 
+    authorizedUsers, 
+    apiBaseUrl, 
+    powerAutomateUrl,
+    mirWebhookUrl 
+} = config;
 
-const authorizedGroups = [
-    '120363356357194833@g.us', // ID group
-    '120363408634458826@g.us'
-];
-
-const appAliases = {
-    'bifast': 'AMOCSR0021',
-    'wondr': 'AFONFO0265',
-    'bnidirect': 'AFONFO0032',
-    'tiplus': 'ABOAST0245',
-    'cms': 'AMOOES0260',
-    'esb' : 'AMOMWI0271'
+// Helper Logger Kustom
+const log = (message, ...optionalParams) => {
+    if (config.debug) {
+        console.log(message, ...optionalParams);
+    }
 };
 
 // Fungsi Helper untuk Resolving Alias
@@ -40,6 +37,12 @@ const resolveAppId = (input) => {
     // Cek apakah ada di kamus, jika tidak ada gunakan input asli
     return appAliases[lowerInput] || input.toUpperCase();
 };
+
+const app = express();
+const port = config.port;
+
+app.use(cors());
+app.use(express.json());
 
 const client = new Client({
     authStrategy: new LocalAuth(),
@@ -65,52 +68,101 @@ client.on('message_create', async (msg) => {
         // BARIS PENTING YANG KURANG: Ambil objek chat dulu
         const chat = await msg.getChat();
         
-        const triggerKeyword = '!help';
         const isGroupAutorized = authorizedGroups.includes(chat.id._serialized);
         const isUserAuthorized = authorizedUsers.includes(msg.from);
-        const powerAutomateUrl = 'https://default56a5465fc59443efb2e12017477901.c7.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/02028c87cf7844898ab9ebb25b2c7c4e/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=Ur0J4BbDsfMy0ekdOPmbYJ6VH1tggBx_VeuYIOhtDBM';
+        
+        // DEBUG LOG DETAIL (Hanya muncul jika debug: true)
+        log(`--- Detail Pesan Baru ---`);
+        log(`Chat Name: ${chat.name}`);           // Akan muncul Nama Grup asli
+        log(`Real Chat ID: ${chat.id._serialized}`); // Gunakan ID ini untuk targetGroupId
+        log(`From (LID/JID): ${msg.from}`);
+        log(`Is Group: ${chat.isGroup}`);
+        log(`Content: ${msg.body}`);
 
-        // DEBUG LOG DETAIL
-        // console.log(`--- Detail Pesan Baru ---`);
-        // console.log(`Chat Name: ${chat.name}`);           // Akan muncul Nama Grup asli
-        // console.log(`Real Chat ID: ${chat.id._serialized}`); // Gunakan ID ini untuk targetGroupId
-        // console.log(`From (LID/JID): ${msg.from}`);
-        // console.log(`Is Group: ${chat.isGroup}`);
-        // console.log(`Content: ${msg.body}`);
-
-        // Gunakan chat.id._serialized untuk pengecekan yang lebih akurat daripada msg.from
-        if (isGroupAutorized && msg.body.toLowerCase().trim() === triggerKeyword) {
+        
+        // --- LOGIKA FORWARD LINK WARROOM DARI BOSTANG WARROOM KE MIM TRANSISI ---
+        // Pastikan diletakkan di dalam client.on('message_create')
+        const targetSender = '191719471603921@lid';     // bostang warroom
+        const targetForwardGroup = '120363408634458826@g.us'; // mim transisi
+        
+        /*** EVENT LISTENER DARI BOSTANG WARROOM UNTUK DI-FORWARD KE MIM TRANSISI ***/
+        if (msg.from === targetSender && msg.body.startsWith('---WARROOM---')) {
+            log(`📢 Terdeteksi pesan WARROOM dari ${msg.from}. Meneruskan ke grup...`);
             
-            // Jika bukan user yang sah, abaikan atau beri peringatan
+            try {
+                // Meneruskan pesan asli ke grup tujuan
+                await client.sendMessage(targetForwardGroup, msg.body);
+                log(`✅ Pesan WARROOM berhasil diteruskan ke ${targetForwardGroup}`);
+            } catch (err) {
+                log(`❌ Gagal meneruskan pesan WARROOM:`, err.message);
+            }
+        }
+        
+        /*** TRIGGERING WARROOM DINAMIS ***/
+        const triggerKeyword = '!wr';
+
+        if (isGroupAutorized && msg.body.toLowerCase().startsWith(triggerKeyword)) {
+            
             if (!isUserAuthorized) {
-                console.log(`🚫 Akses ditolak untuk: ${msg.from}`);
-                return; // Berhenti di sini, tidak memicu Power Automate
+                log(`🚫 Akses ditolak untuk: ${msg.from}`);
+                return;
             }
 
-            console.log(`🚀 Keyword cocok di grup "${chat.name}"! Memicu Power Automate...`);
+            // 1. Ambil input appId
+            const parts = msg.body.split(' ');
+            const rawInput = parts[1]; 
 
-            const response = await axios.post(powerAutomateUrl, {
-                sender: msg.author || msg.from,
-                groupName: chat.name,
-                groupId: chat.id._serialized,
-                message: msg.body,
-                timestamp: new Date().toISOString()
-            });
+            if (!rawInput) {
+                return msg.reply('❌ Masukkan kode atau alias aplikasi. Contoh: !wr wondr');
+            }
 
-            console.log('✅ Response Power Automate:', response.status);
+            const appId = resolveAppId(rawInput);
 
-            if (response.status === 202 || response.status === 200) {
-                await msg.reply('✅ Permintaan bantuan telah diteruskan ke sistem Power Automate.');
+            // 2. LOGIKA MAPPING NOMOR (LID ke MSISDN)
+            const userMapping = {
+                "25688367223015:48": "6289651524904",
+                // Anda bisa menambah mapping rekan lain di sini jika diperlukan
+                // "ID_LID_LAIN": "NOMOR_HP_LAIN"
+            };
+
+            // Ambil ID mentah pengirim (tanpa @lid atau @c.us)
+            const rawSenderId = (msg.author || msg.from).split('@')[0];
+            
+            // Cek apakah ada di mapping, jika tidak gunakan ID asli
+            const senderNumber = userMapping[rawSenderId] || rawSenderId;
+
+            log(`🚀 Memicu Warroom untuk App ID: ${appId} | Sender: ${senderNumber}`);
+
+            try {
+                const payload = {
+                    "app_id": appId,
+                    "create_mir": false,
+                    "create_meeting": true,
+                    "create_post": false,
+                    "send_email": true,
+                    "phone_sender": `+${senderNumber}` // Format +62...
+                };
+
+                const response = await axios.post(powerAutomateUrl, payload);
+
+                log('✅ Response Power Automate:', response.status);
+
+                if (response.status === 202 || response.status === 200) {
+                    await msg.reply(`✅ Instruksi Warroom untuk *${appId}* telah diteruskan ke Power Automate.\n(Pengirim: +${senderNumber})`);
+                }
+            } catch (error) {
+                log('❌ Gagal memicu Power Automate:', error.message);
+                await msg.reply('⚠️ Terjadi kesalahan saat menghubungi server Power Automate.');
             }
         }
 
         // Memeriksa apakah pesan dimulai dengan !pic
         if (isGroupAutorized && msg.body.toLowerCase().startsWith('!pic ')) {
             if (!isUserAuthorized) {
-                console.log(`🚫 Akses ditolak untuk: ${msg.from}`);
+                log(`🚫 Akses ditolak untuk: ${msg.from}`);
                 return; // Berhenti di sini, tidak memicu Power Automate
             }
-            // const appId = msg.body.split(' ')[1];
+            
             const rawInput = msg.body.split(' ')[1];
             if (!rawInput) return msg.reply('❌ Masukkan kode atau alias aplikasi. Contoh: !pic bifast');
             
@@ -121,8 +173,8 @@ client.on('message_create', async (msg) => {
             try {
                 // Melakukan hit ke dua endpoint sekaligus
                 const [appRes, picsRes] = await Promise.all([
-                    axios.get(`http://localhost:5000/api/apps/${appId}`),
-                    axios.get(`http://localhost:5000/api/apps/${appId}/people`)
+                    axios.get(`${apiBaseUrl}/api/apps/${appId}`),
+                    axios.get(`${apiBaseUrl}/api/apps/${appId}/people`)
                 ]);
 
                 const appData = appRes.data; // Mengambil detail aplikasi
@@ -158,7 +210,7 @@ client.on('message_create', async (msg) => {
 
         if (isGroupAutorized && msg.body.toLowerCase().startsWith('!link ')) {
             if (!isUserAuthorized) {
-                console.log(`🚫 Akses !link ditolak untuk: ${msg.from}`);
+                log(`🚫 Akses !link ditolak untuk: ${msg.from}`);
                 return;
             }
 
@@ -166,26 +218,35 @@ client.on('message_create', async (msg) => {
             if (!rawInput) return msg.reply('❌ Masukkan kode atau alias aplikasi. Contoh: !link bifast');
             
             const appId = resolveAppId(rawInput);
-            // const appId = msg.body.split(' ')[1]?.toUpperCase();
-
-            if (!appId) return msg.reply('❌ Masukkan kode aplikasi. Contoh: !link AMOCSR0021');
 
             try {
-                // Kita hit endpoint links
-                const response = await axios.get(`http://localhost:5000/api/links`);
-                const allLinks = response.data;
+                // 1. Ambil data link dan data detail aplikasi secara paralel
+                const [linksRes, appRes] = await Promise.all([
+                    axios.get(`${apiBaseUrl}/api/links`),
+                    axios.get(`${apiBaseUrl}/api/apps/${appId}`).catch(() => ({ data: {} })) 
+                    // catch di atas agar jika app detail tidak ketemu, bot tidak crash dan tetap lanjut
+                ]);
 
-                // Cari link yang sesuai dengan application_id (appId)
+                const allLinks = linksRes.data;
+                const appDetail = appRes.data;
+
+                // 2. Cari link yang sesuai
                 const appLink = allLinks.find(l => l.application_id.toUpperCase() === appId);
 
                 if (!appLink) {
                     return msg.reply(`⚠️ Link untuk aplikasi *${appId}* tidak ditemukan.`);
                 }
 
-                // Susun pesan balasan
-                let linkMessage = `🔗 *Pranala Aplikasi: ${appId} - ${appLink.nama_aplikasi}*\n\n`;
+                // 3. Susun pesan balasan dengan Deskripsi
+                let linkMessage = `🔗 *Pranala Aplikasi: ${appId} - ${appLink.nama_aplikasi}*\n`;
                 
-                linkMessage += `📂 *Dokumentasi:* \n${appLink.docs_link || '-'}\n\n`;
+                // Tambahkan deskripsi jika tersedia
+                const deskripsi = appDetail.deskripsi_aplikasi || "";
+                if (deskripsi) {
+                    linkMessage += `_${deskripsi}_\n`;
+                }
+                
+                linkMessage += `\n📂 *Dokumentasi:* \n${appLink.docs_link || '-'}\n\n`;
                 linkMessage += `🛡️ *Warroom:* \n${appLink.warroom_link || '-'}\n\n`;
                 
                 if (appLink.notes) {
@@ -193,11 +254,117 @@ client.on('message_create', async (msg) => {
                 }
 
                 await msg.reply(linkMessage);
-                console.log(`✅ Berhasil mengirim link untuk ${appId}`);
+                log(`✅ Berhasil mengirim link & deskripsi untuk ${appId}`);
 
             } catch (error) {
                 console.error('❌ Error hit backend links:', error.message);
                 msg.reply('⚠️ Terjadi kesalahan saat mengambil data link.');
+            }
+        }
+
+        if (isGroupAutorized && msg.body.toLowerCase().startsWith('!docs ')) {
+            if (!isUserAuthorized) {
+                log(`🚫 Akses !docs ditolak untuk: ${msg.from}`);
+                return;
+            }
+
+            const rawInput = msg.body.split(' ')[1];
+            if (!rawInput) return msg.reply('❌ Masukkan kode/alias. Contoh: !docs bifast');
+            
+            const appId = resolveAppId(rawInput);
+
+            try {
+                const [linksRes, appRes] = await Promise.all([
+                    axios.get(`${apiBaseUrl}/api/links`),
+                    axios.get(`${apiBaseUrl}/api/apps/${appId}`).catch(() => ({ data: {} }))
+                ]);
+
+                const appLink = linksRes.data.find(l => l.application_id.toUpperCase() === appId);
+                if (!appLink || !appLink.docs_link) {
+                    return msg.reply(`⚠️ Dokumentasi untuk *${appId}* tidak ditemukan.`);
+                }
+
+                let docMessage = `📂 *Dokumentasi Aplikasi: ${appId}*\n`;
+                docMessage += `*${appLink.nama_aplikasi}*\n`;
+                if (appRes.data.deskripsi_aplikasi) docMessage += `_${appRes.data.deskripsi_aplikasi}_\n`;
+                docMessage += `\n🔗 *Link:* \n${appLink.docs_link}`;
+
+                await msg.reply(docMessage);
+                log(`✅ Sent docs for ${appId}`);
+            } catch (error) {
+                msg.reply('⚠️ Terjadi kesalahan saat mengambil data dokumentasi.');
+            }
+        }
+
+        if (isGroupAutorized && msg.body.toLowerCase().startsWith('!link-wr ')) {
+            if (!isUserAuthorized) {
+                log(`🚫 Akses !wr_link ditolak untuk: ${msg.from}`);
+                return;
+            }
+
+            const rawInput = msg.body.split(' ')[1];
+            if (!rawInput) return msg.reply('❌ Masukkan kode/alias. Contoh: !wr_link bifast');
+            
+            const appId = resolveAppId(rawInput);
+
+            try {
+                const linksRes = await axios.get(`${apiBaseUrl}/api/links`);
+                const appLink = linksRes.data.find(l => l.application_id.toUpperCase() === appId);
+
+                if (!appLink || !appLink.warroom_link) {
+                    return msg.reply(`⚠️ Link Warroom untuk *${appId}* tidak ditemukan.`);
+                }
+
+                let wrMessage = `🛡️ *Link Warroom: ${appId}*\n`;
+                wrMessage += `*${appLink.nama_aplikasi}*\n\n`;
+                wrMessage += `🔗 *Join Warroom:* \n${appLink.warroom_link}`;
+                
+                if (appLink.notes) wrMessage += `\n\n📝 *Catatan:* \n${appLink.notes}`;
+
+                await msg.reply(wrMessage);
+                log(`✅ Sent Warroom link for ${appId}`);
+            } catch (error) {
+                msg.reply('⚠️ Terjadi kesalahan saat mengambil data Warroom.');
+            }
+        }
+
+        /*** COMMAND !mir-info ***/
+        if (isGroupAutorized && msg.body.toLowerCase().startsWith('!mir-info ')) {
+            if (!isUserAuthorized) {
+                log(`🚫 Akses !mir-info ditolak untuk: ${msg.from}`);
+                return;
+            }
+
+            // Mengambil teks setelah "!mir-info "
+            const fullInput = msg.body.substring(10).trim(); 
+            
+            // Memisahkan berdasarkan karakter "/"
+            const [rawAppName, ...issueParts] = fullInput.split('/');
+            const rawIssue = issueParts.join('/').trim(); // Jaga-jaga jika di dalam isu ada karakter / lagi
+
+            if (!rawAppName || !rawIssue) {
+                return msg.reply('❌ Format salah. Gunakan: *!mir-info nama_aplikasi/isu*\nContoh: `!mir-info core/kendala control M`');
+            }
+
+            // Resolving alias untuk nama aplikasi (opsional, agar 'wondr' tetap jadi ID asli)
+            const appId = resolveAppId(rawAppName.trim());
+
+            log(`🚀 Mengirim MIR Info untuk ${appId} - Isu: ${rawIssue}`);
+
+            try {
+                const payload = {
+                    "nama_aplikasi": appId,
+                    "isu": rawIssue
+                };
+
+                const response = await axios.post(mirWebhookUrl, payload);
+
+                if (response.status === 202 || response.status === 200) {
+                    await msg.reply(`✅ Informasi MIR untuk *${appId}* berhasil dikirim ke sistem.`);
+                }
+            } catch (error) {
+                log('❌ Gagal mengirim MIR Info:', error.message);
+                await msg.reply('⚠️ Terjadi kesalahan saat mengirim data MIR Info.');
             }
         }
 
@@ -208,12 +375,12 @@ client.on('message_create', async (msg) => {
 });
 
 client.on('qr', (qr) => {
-    console.log('SCAN QR CODE INI MENGGUNAKAN WHATSAPP DI HP ANDA:');
+    log('SCAN QR CODE INI MENGGUNAKAN WHATSAPP DI HP ANDA:');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('✅ Klien WhatsApp siap!');
+    log('✅ Klien WhatsApp siap!');
 });
 
 app.get('/api/contacts', (req, res) => {
@@ -322,7 +489,7 @@ app.post('/api/send-message', async (req, res) => {
         const isRegistered = await client.isRegisteredUser(waNumber);
         if (isRegistered) {
             await client.sendMessage(waNumber, pesanFinal);
-            console.log(`Pesan berhasil dikirim ke ${targetNama} (${targetNomor}).`);
+            log(`Pesan berhasil dikirim ke ${targetNama} (${targetNomor}).`);
             res.json({ success: true, message: `Pesan berhasil dikirim ke ${targetNama}.` });
         } else {
             res.status(400).json({ success: false, message: `Nomor ${targetNomor} tidak terdaftar di WhatsApp.` });
@@ -354,7 +521,7 @@ app.post('/api/send-bulk', async (req, res) => {
             const isRegistered = await client.isRegisteredUser(number);
             if (isRegistered) {
                 await client.sendMessage(number, pesanFinal);
-                console.log(`Pesan berhasil dikirim ke ${contact.nama} (${contact.nomor}).`);
+                log(`Pesan berhasil dikirim ke ${contact.nama} (${contact.nomor}).`);
                 pesanBerhasil.push(contact.nama);
             } else {
                 console.warn(`Nomor ${contact.nomor} tidak terdaftar di WhatsApp. Melewati...`);
@@ -393,7 +560,7 @@ app.post('/api/send-group', async (req, res) => {
         // Langsung kirim ke groupId (pastikan formatnya sudah benar @g.us)
         await client.sendMessage(groupId, message);
         
-        console.log(`Pesan grup berhasil dikirim ke ID: ${groupId}`);
+        log(`Pesan grup berhasil dikirim ke ID: ${groupId}`);
         res.json({ success: true, message: 'Pesan grup berhasil dikirim.' });
     } catch (error) {
         console.error('Gagal mengirim pesan ke grup:', error.message);
@@ -402,21 +569,21 @@ app.post('/api/send-group', async (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Server backend berjalan di http://localhost:${port}`);
+    log(`Server backend berjalan di http://localhost:${port}`);
 });
 
 client.on('authenticated', () => {
-    console.log('✅ Berhasil terautentikasi!');
+    log('✅ Berhasil terautentikasi!');
 });
 
 client.on('disconnected', (reason) => {
-    console.log('❌ Klien terputus, alasan:', reason);
+    log('❌ Klien terputus, alasan:', reason);
 });
 
 client.initialize();
 
 // Agar aplikasi tidak langsung mati (crash) saat terjadi error Puppeteer
 process.on('unhandledRejection', (reason, p) => {
-    console.log('Unhandled Rejection at: Promise', p, 'reason:', reason);
+    log('Unhandled Rejection at: Promise', p, 'reason:', reason);
     // Aplikasi tidak akan exit, hanya log error saja
 });

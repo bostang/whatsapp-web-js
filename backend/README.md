@@ -1,93 +1,81 @@
-# 🛠️ Backend - WhatsApp Automation Server
+# 🛠️ WhatsApp Automation & Warroom Bridge Server
 
-Server ini berfungsi sebagai jembatan (bridge) antara antarmuka web dan protokol WhatsApp menggunakan library `whatsapp-web.js`. Server mengelola sesi otentikasi, memproses antrean pesan, dan menyediakan API untuk dikonsumsi oleh frontend.
+Server ini bertindak sebagai jembatan (bridge) antara sistem internal, Power Automate, dan protokol WhatsApp. Selain menyediakan REST API untuk Dashboard, server ini dilengkapi dengan **Command Listener** untuk memicu alur kerja operasional secara otomatis.
 
 ## 📦 Dependensi Utama
 
-* **`express`**: Framework inti untuk REST API.
-* **`whatsapp-web.js`**: Library pembungkus (wrapper) WhatsApp Web melalui Puppeteer.
-* **`qrcode-terminal`**: Digunakan untuk me-render QR Code langsung di terminal.
-* **`cors`**: Mengizinkan permintaan lintas domain dari frontend React.
+* **`whatsapp-web.js`**: Menjalankan engine WhatsApp Web via Puppeteer.
+* **`express` & `axios**`: Framework API dan HTTP Client untuk integrasi eksternal (Power Automate).
+* **`qrcode-terminal`**: Render QR Code untuk autentikasi sesi.
+* **`LocalAuth`**: Menyimpan sesi secara lokal agar tidak perlu scan ulang setiap restart.
 
 ---
 
-## 🚀 API Documentation
+## 🚀 Fitur Cerdas (Command Listener)
 
-### 1. GET /api/contacts
+Bot memantau pesan masuk di grup terautorisasi dan merespons perintah berikut:
 
-Mengambil daftar kontak dari penyimpanan lokal.
+### 1. Warroom Trigger (`!wr <app_id/alias>`)
 
-* **Method**: `GET`
-* **Endpoint**: `/api/contacts`
-* **Success Response**: `200 OK` (Array of contact objects).
+Memicu alur kerja di Power Automate untuk pembuatan meeting, notifikasi email, dan pembuatan post.
 
-### 2. GET /api/groups
+* **Dinamis**: Mendukung alias (contoh: `!wr wondr` otomatis dikonversi ke ID aplikasi asli).
+* **LID Mapping**: Otomatis menerjemahkan identitas WhatsApp LID ke nomor telepon MSISDN (+62...) sebelum dikirim ke payload.
 
-Mengambil daftar grup WhatsApp yang tersedia dari file `groups.json`.
+### 2. Informasi Aplikasi
 
-* **Method**: `GET`
-* **Endpoint**: `/api/groups`
-* **Success Response**: `200 OK`
-* **Body**:
+* **`!pic <app_id>`**: Menampilkan daftar personil (PIC) dari database backend, termasuk divisi, jabatan, dan kontak.
+* **`!docs <app_id>`**: Memberikan tautan langsung ke dokumentasi teknis aplikasi.
+* **`!link-wr <app_id>`**: Memberikan tautan join meeting warroom aktif untuk aplikasi tersebut.
 
-```json
-[
-  { "nama": "Chit-chat BR", "id": "120363408634458826@g.us" }
-]
+### 3. Auto-Forwarding (Bostang Listener)
 
-```
-
-### 3. POST /api/send-message
-
-Mengirim pesan tunggal ke nomor personal atau nomor kustom.
-
-* **Method**: `POST`
-* **Body**: Mendukung objek kontak (nama, nomor, gender) dan string pesan.
-* **Kustomisasi**: Otomatis mengganti `{nama}` dan `{sapaan}` (Mas/Mbak).
-
-### 4. POST /api/send-bulk
-
-Mengirim pesan ke banyak kontak sekaligus secara berurutan.
-
-* **Method**: `POST`
-* **Success Response**: Mengembalikan daftar nama yang `berhasil` dan `gagal`.
-
-### 5. POST /api/send-group (NEW)
-
-Mengirim pesan pengumuman ke grup tertentu.
-
-* **Method**: `POST`
-* **Body Request**:
-
-```json
-{
-  "groupId": "120363408634458826@g.us",
-  "message": "Halo semuanya, ini pesan dari dashboard."
-}
-
-```
+Bot secara otomatis mendeteksi pesan dengan prefix `---WARROOM---` dari pengirim tertentu (`bostang warroom`) dan meneruskannya ke grup transisi yang ditentukan.
 
 ---
 
-## ⚙️ Logika Personalisasi Pesan
+## 📂 Manajemen Data & Konfigurasi
 
-Server secara otomatis memproses isi pesan sebelum dikirim dengan aturan:
+Bot menggunakan tiga file JSON utama di folder `./data/` untuk mengatur perilakunya:
 
-1. **`{nama}`**: Diganti dengan nama kontak.
-2. **`{sapaan}`**:
+1. **`config.json`**:
+* `authorizedGroups`: Daftar ID Grup yang diizinkan menjalankan perintah.
+* `authorizedUsers`: Daftar ID Pengirim yang memiliki hak akses eksekusi.
+* `apiBaseUrl`: Endpoint backend data aplikasi & PIC.
+* `powerAutomateUrl`: Webhook trigger untuk integrasi Microsoft Power Platform.
 
-* Jika gender `laki` -> **Mas**.
-* Jika gender `perempuan` -> **Mbak**.
+
+2. **`aliases.json`**: Kamus pemetaan kata kunci (alias) ke ID aplikasi resmi (misal: `"wondr": "AFONFO0265"`).
+3. **`contact.json` & `group.json**`: Database lokal untuk kebutuhan fitur broadcast via Dashboard.
 
 ---
 
-## 📂 Struktur Data
+## ⚙️ API Documentation (untuk Frontend)
 
-* **`server.js`**: Logika utama server dan inisialisasi Client WhatsApp.
-* **`./data/contact.json`**: Database kontak personal.
-* **`./data/groups.json`**: Database ID grup WhatsApp (untuk mendapatkan ID grup, Anda bisa melihat log terminal saat server berjalan).
+### 1. Broadcast Engine
 
-## ⚠️ Catatan Penting
+* **`POST /api/send-message`**: Kirim pesan personal dengan template `{sapaan}` & `{nama}`.
+* **`POST /api/send-bulk`**: Kirim pesan massal ke daftar kontak dengan delay keamanan 3 detik.
+* **`POST /api/send-group`**: Mengirim pesan pengumuman langsung ke ID Grup tertentu.
 
-* Saat pertama kali menjalankan `node server.js`, Anda wajib memindai QR Code yang muncul di terminal.
-* Status `Berhasil terautentikasi!` menandakan server siap menerima perintah dari frontend.
+### 2. WhatsApp Utilities
+
+* **`GET /api/fetch-wa-contacts`**: Menarik daftar kontak asli dari buku telepon WhatsApp.
+* **`GET /api/fetch-wa-groups`**: Menarik daftar grup yang diikuti bot beserta JID (`@g.us`).
+
+---
+
+## ⚠️ Penanganan Identitas LID
+
+Karena kebijakan privasi WhatsApp terbaru, pengirim mungkin muncul sebagai ID unik (`25688... @lid`).
+
+* Bot telah dilengkapi dengan `userMapping` di dalam `server.js` untuk mengonversi ID LID ini kembali menjadi nomor telepon asli demi kebutuhan integrasi sistem pihak ketiga.
+
+## 🛠️ Cara Menjalankan
+
+1. Pastikan Node.js terinstal.
+2. Jalankan `npm install`.
+3. Jalankan `node server.js`.
+4. Scan QR Code yang muncul di terminal.
+5. Pastikan log menunjukkan `✅ Klien WhatsApp siap!`.
+
