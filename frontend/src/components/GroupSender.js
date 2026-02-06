@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Form, Button, Spinner } from 'react-bootstrap';
-import * as api from '../api';
+import * as api from '../api/api';
 
 // Tambahkan searchGroup dan setSearchGroup di sini
 const GroupSender = ({ groups, customMessage, onSuccess, onError, searchGroup, setSearchGroup }) => {

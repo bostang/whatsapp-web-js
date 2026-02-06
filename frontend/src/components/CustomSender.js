@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Form, Button, Spinner } from 'react-bootstrap';
-import * as api from '../api';
+import * as api from '../api/api';
 
 const CustomSender = ({ customMessage, onSuccess, onError }) => {
     const [data, setData] = useState({ nama: '', nomor: '', gender: 'laki' });

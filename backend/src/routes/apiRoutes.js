@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
 const { log } = require('../utils/helpers');
@@ -95,5 +96,48 @@ module.exports = (client) => {
         } catch (e) { res.status(500).json({ error: e.message }); }
     });
 
+
+    // Handler untuk Proxy Data PIC
+    router.get('/pic-management/:appId', async (req, res) => {
+        const { appId } = req.params;
+        const DB_URL = 'http://localhost:5000'; 
+
+        try {
+            const [appRes, peopleRes, mapRes, linksRes] = await Promise.all([
+                axios.get(`${DB_URL}/api/apps/${appId}`),
+                axios.get(`${DB_URL}/api/apps/${appId}/people`),
+                axios.get(`${DB_URL}/api/app-people-map`),
+                axios.get(`${DB_URL}/api/links`) //
+            ]);
+
+            // Cari link warroom khusus untuk aplikasi ini
+            const appLink = linksRes.data.find(l => l.application_id.toUpperCase() === appId.toUpperCase());
+
+            const enrichedPics = peopleRes.data.map(person => {
+                const relation = mapRes.data.find(m => 
+                    m.application_id.toUpperCase() === appId.toUpperCase() && 
+                    m.npp === person.npp
+                );
+                return {
+                    ...person,
+                    layer: relation ? relation.layer : 'Others'
+                };
+            });
+
+            res.json({
+                app: appRes.data,
+                pics: enrichedPics,
+                warroom_link: appLink ? appLink.warroom_link : null // Kirim link ke frontend
+            });
+        } catch (error) {
+            // Jika 404 dari port 5000, kirim pesan yang lebih user-friendly
+            if (error.response && error.response.status === 404) {
+                return res.status(404).json({ message: 'Aplikasi tidak ditemukan di database.' });
+            }
+            console.error("Proxy Error:", error.message);
+            res.status(500).json({ message: 'Internal Server Error pada Proxy Backend' });
+        }
+    });
+    
     return router;
 };
